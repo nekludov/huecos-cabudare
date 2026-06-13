@@ -1,0 +1,956 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>HuecosMapa Cabudare</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --asfalto: #1C1C1E;
+    --amarillo: #F5C518;
+    --blanco: #F8F7F4;
+    --gris: #6B7280;
+    --rojo: #EF4444;
+    --verde: #22C55E;
+    --naranja: #F97316;
+    --azul: #3B82F6;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--asfalto);
+    color: var(--blanco);
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* HEADER */
+  header {
+    background: var(--asfalto);
+    border-bottom: 2px solid var(--amarillo);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    z-index: 1000;
+  }
+
+  .logo { display: flex; align-items: center; gap: 8px; }
+
+  .logo-icon {
+    width: 32px; height: 32px;
+    background: var(--amarillo);
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .logo-icon::after {
+    content: '';
+    width: 10px; height: 10px;
+    background: var(--asfalto);
+    border-radius: 50%;
+    transform: rotate(45deg);
+  }
+
+  .logo-text { display: flex; flex-direction: column; }
+  .logo-text strong { font-size: 15px; font-weight: 800; letter-spacing: -0.3px; color: var(--amarillo); line-height: 1; }
+  .logo-text span { font-size: 10px; color: var(--gris); letter-spacing: 0.5px; text-transform: uppercase; }
+
+  .header-right { display: flex; align-items: center; gap: 8px; }
+
+  #contador-badge {
+    background: var(--amarillo); color: var(--asfalto);
+    font-size: 11px; font-weight: 800;
+    padding: 3px 10px; border-radius: 20px; letter-spacing: 0.3px;
+  }
+
+  #btn-admin-header {
+    background: #2C2C2E; border: none; color: var(--gris);
+    width: 30px; height: 30px; border-radius: 50%;
+    cursor: pointer; font-size: 15px;
+    display: flex; align-items: center; justify-content: center;
+  }
+
+  /* ADMIN BADGE en header */
+  .admin-active-badge {
+    background: var(--azul); color: #fff;
+    font-size: 10px; font-weight: 800;
+    padding: 2px 8px; border-radius: 10px;
+    display: none;
+  }
+  .admin-active-badge.visible { display: inline-block; }
+
+  /* MAPA */
+  #map { flex: 1; width: 100%; position: relative; z-index: 1; }
+
+  /* FABs */
+  .fab-container {
+    position: absolute; bottom: 180px; right: 16px;
+    display: flex; flex-direction: column; gap: 10px; z-index: 500;
+  }
+  .fab {
+    width: 52px; height: 52px; border-radius: 50%; border: none;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    font-size: 22px; box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    transition: transform 0.15s ease;
+  }
+  .fab:active { transform: scale(0.93); }
+  .fab-gps { background: var(--amarillo); color: var(--asfalto); }
+  .fab-list { background: var(--asfalto); color: var(--amarillo); border: 2px solid var(--amarillo); font-size: 18px; }
+
+  /* LEYENDA */
+  .leyenda {
+    position: absolute; bottom: 180px; left: 16px;
+    background: rgba(28,28,30,0.92); border: 1px solid #3C3C3E;
+    border-radius: 12px; padding: 10px 12px; z-index: 500;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .leyenda-item { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--blanco); }
+  .leyenda-dot {
+    width: 12px; height: 12px; border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg); flex-shrink: 0;
+  }
+
+  /* PANEL INFERIOR */
+  .bottom-panel {
+    background: #111113; border-top: 2px solid #2C2C2E;
+    padding: 12px 16px 16px; flex-shrink: 0; z-index: 100;
+  }
+  .panel-hint {
+    font-size: 12px; color: var(--gris); text-align: center;
+    margin-bottom: 10px; display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .panel-hint::before, .panel-hint::after { content: ''; flex: 1; height: 1px; background: #2C2C2E; }
+  .btn-reportar {
+    width: 100%; background: var(--amarillo); color: var(--asfalto);
+    border: none; border-radius: 12px; padding: 14px;
+    font-size: 15px; font-weight: 800; letter-spacing: 0.3px; cursor: pointer;
+    transition: opacity 0.15s;
+  }
+  .btn-reportar:active { opacity: 0.85; }
+
+  /* MODAL BASE */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    z-index: 2000; display: none; align-items: flex-end; justify-content: center;
+  }
+  .modal-overlay.active { display: flex; }
+  .modal {
+    background: #1C1C1E; border-radius: 24px 24px 0 0;
+    width: 100%; max-width: 500px; padding: 0 0 24px;
+    max-height: 92dvh; overflow-y: auto;
+    animation: slideUp 0.3s ease;
+  }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+
+  .modal-handle {
+    width: 36px; height: 4px; background: #3C3C3E;
+    border-radius: 2px; margin: 12px auto 0;
+  }
+  .modal-header { padding: 16px 20px 12px; border-bottom: 1px solid #2C2C2E; }
+  .modal-header h2 { font-size: 18px; font-weight: 800; color: var(--amarillo); }
+  .modal-header p { font-size: 12px; color: var(--gris); margin-top: 2px; }
+  .modal-body { padding: 16px 20px; display: flex; flex-direction: column; gap: 16px; }
+
+  /* CAMPOS */
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field label { font-size: 12px; font-weight: 700; color: var(--gris); text-transform: uppercase; letter-spacing: 0.8px; }
+  .field input, .field textarea, .field select {
+    background: #2C2C2E; border: 1.5px solid #3C3C3E;
+    border-radius: 10px; padding: 12px 14px;
+    color: var(--blanco); font-size: 15px; font-family: inherit; outline: none;
+    transition: border-color 0.2s;
+  }
+  .field input:focus, .field textarea:focus, .field select:focus { border-color: var(--amarillo); }
+  .field textarea { resize: none; height: 80px; }
+
+  /* GRAVEDAD */
+  .gravedad-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .gravedad-btn {
+    padding: 10px 6px; border-radius: 10px; border: 2px solid #3C3C3E;
+    background: #2C2C2E; color: var(--blanco); font-size: 12px; font-weight: 700;
+    cursor: pointer; text-align: center; transition: all 0.15s;
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+  .gravedad-btn .emoji { font-size: 20px; }
+  .gravedad-btn.active[data-g="pequeño"] { border-color: var(--verde); background: rgba(34,197,94,0.15); color: var(--verde); }
+  .gravedad-btn.active[data-g="mediano"] { border-color: var(--naranja); background: rgba(249,115,22,0.15); color: var(--naranja); }
+  .gravedad-btn.active[data-g="grande"] { border-color: var(--rojo); background: rgba(239,68,68,0.15); color: var(--rojo); }
+
+  /* FOTO */
+  .foto-area {
+    border: 2px dashed #3C3C3E; border-radius: 10px;
+    padding: 16px; text-align: center; cursor: pointer; transition: border-color 0.2s;
+  }
+  .foto-area:active { border-color: var(--amarillo); }
+  .foto-area p { font-size: 13px; color: var(--gris); margin-top: 6px; }
+  .foto-area .icon { font-size: 28px; }
+  #foto-preview {
+    width: 100%; border-radius: 8px; margin-top: 8px; display: none;
+    max-height: 160px; object-fit: cover;
+  }
+
+  /* COORDS */
+  .coords-display {
+    background: #2C2C2E; border-radius: 10px; padding: 10px 14px;
+    font-size: 12px; color: var(--gris); font-family: 'Courier New', monospace;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .coords-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--verde);
+    flex-shrink: 0; animation: pulse 2s infinite;
+  }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  .coords-dot.pending { background: var(--gris); animation: none; }
+
+  /* BOTONES */
+  .btn-enviar {
+    width: 100%; background: var(--amarillo); color: var(--asfalto);
+    border: none; border-radius: 12px; padding: 15px;
+    font-size: 15px; font-weight: 800; cursor: pointer; margin-top: 4px;
+  }
+  .btn-enviar:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-cancelar {
+    width: 100%; background: transparent; color: var(--gris);
+    border: none; padding: 12px; font-size: 14px; cursor: pointer;
+  }
+
+  /* TOAST */
+  .toast {
+    position: fixed; top: 70px; left: 50%;
+    transform: translateX(-50%) translateY(-20px);
+    background: #2C2C2E; color: var(--blanco);
+    padding: 12px 20px; border-radius: 12px;
+    font-size: 14px; font-weight: 600; z-index: 9999;
+    opacity: 0; transition: all 0.3s ease;
+    white-space: nowrap; border-left: 4px solid var(--amarillo);
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.success { border-left-color: var(--verde); }
+  .toast.error { border-left-color: var(--rojo); }
+  .toast.info { border-left-color: var(--azul); }
+
+  /* LISTA */
+  .lista-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+    z-index: 2000; display: none; align-items: flex-end; justify-content: center;
+  }
+  .lista-overlay.active { display: flex; }
+  .lista-modal {
+    background: #1C1C1E; border-radius: 24px 24px 0 0;
+    width: 100%; max-width: 500px; padding: 0 0 24px;
+    max-height: 75dvh; display: flex; flex-direction: column;
+    animation: slideUp 0.3s ease;
+  }
+  .lista-header {
+    padding: 16px 20px; border-bottom: 1px solid #2C2C2E;
+    display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;
+  }
+  .lista-header h2 { font-size: 17px; font-weight: 800; color: var(--amarillo); }
+  .btn-cerrar-lista {
+    background: #2C2C2E; border: none; color: var(--gris);
+    width: 30px; height: 30px; border-radius: 50%;
+    cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center;
+  }
+
+  /* FILTROS LISTA */
+  .lista-filtros {
+    display: flex; gap: 6px; padding: 10px 16px;
+    flex-shrink: 0; overflow-x: auto; border-bottom: 1px solid #2C2C2E;
+  }
+  .filtro-btn {
+    background: #2C2C2E; border: 1.5px solid #3C3C3E;
+    color: var(--gris); font-size: 11px; font-weight: 700;
+    padding: 5px 12px; border-radius: 20px; cursor: pointer; white-space: nowrap;
+    transition: all 0.15s;
+  }
+  .filtro-btn.active { background: var(--amarillo); color: var(--asfalto); border-color: var(--amarillo); }
+
+  .lista-items { overflow-y: auto; flex: 1; padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .lista-item {
+    background: #2C2C2E; border-radius: 12px; padding: 12px 14px;
+    cursor: pointer; transition: background 0.15s; border-left: 4px solid var(--gris);
+  }
+  .lista-item:active { background: #3C3C3E; }
+  .lista-item.pequeño { border-left-color: var(--verde); }
+  .lista-item.mediano { border-left-color: var(--naranja); }
+  .lista-item.grande { border-left-color: var(--rojo); }
+  .lista-item.pendiente { border-left-color: var(--azul); opacity: 0.8; }
+  .lista-item.arreglado { border-left-color: #4B5563; opacity: 0.6; }
+
+  .lista-item-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; gap: 8px; }
+  .lista-item-nombre { font-size: 13px; font-weight: 700; color: var(--blanco); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lista-item-fecha { font-size: 11px; color: var(--gris); margin-top: 4px; }
+  .lista-item-desc { font-size: 12px; color: var(--gris); line-height: 1.4; }
+
+  /* TAGS */
+  .gravedad-tag {
+    font-size: 10px; font-weight: 800; padding: 2px 8px; border-radius: 10px;
+    text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;
+  }
+  .gravedad-tag.pequeño { background: rgba(34,197,94,0.2); color: var(--verde); }
+  .gravedad-tag.mediano { background: rgba(249,115,22,0.2); color: var(--naranja); }
+  .gravedad-tag.grande { background: rgba(239,68,68,0.2); color: var(--rojo); }
+  .gravedad-tag.pendiente { background: rgba(59,130,246,0.2); color: var(--azul); }
+  .gravedad-tag.arreglado { background: rgba(75,85,99,0.3); color: #9CA3AF; }
+
+  .lista-vacia { text-align: center; padding: 40px 20px; color: var(--gris); font-size: 14px; }
+  .lista-vacia .icon { font-size: 36px; margin-bottom: 10px; }
+
+  /* POPUP LEAFLET */
+  .leaflet-popup-content-wrapper {
+    background: #1C1C1E !important; border: 1px solid #3C3C3E !important;
+    border-radius: 12px !important; color: var(--blanco) !important;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5) !important;
+  }
+  .leaflet-popup-tip { background: #1C1C1E !important; }
+  .leaflet-popup-close-button { color: var(--gris) !important; top: 8px !important; right: 8px !important; }
+
+  .popup-content h3 { font-size: 14px; font-weight: 800; color: var(--amarillo); margin-bottom: 6px; }
+  .popup-content p { font-size: 12px; color: #9CA3AF; margin-bottom: 3px; line-height: 1.4; }
+  .popup-content .popup-tags { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+
+  .btn-popup {
+    width: 100%; margin-top: 10px; padding: 9px;
+    border-radius: 8px; border: none; font-size: 12px; font-weight: 700;
+    cursor: pointer; transition: opacity 0.15s;
+  }
+  .btn-popup:active { opacity: 0.8; }
+  .btn-ya-taparon { background: rgba(59,130,246,0.2); color: var(--azul); border: 1.5px solid var(--azul); }
+  .btn-ya-taparon:disabled { opacity: 0.4; cursor: not-allowed; }
+  .btn-admin-confirmar { background: var(--verde); color: #fff; }
+  .btn-admin-rechazar { background: #2C2C2E; color: var(--rojo); border: 1.5px solid var(--rojo); margin-top: 6px; }
+
+  /* PANEL ADMIN */
+  .admin-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+    z-index: 3000; display: none; align-items: center; justify-content: center; padding: 20px;
+  }
+  .admin-overlay.active { display: flex; }
+  .admin-box {
+    background: #1C1C1E; border-radius: 20px; padding: 28px 24px;
+    width: 100%; max-width: 360px; border: 2px solid var(--azul);
+  }
+  .admin-box h2 { font-size: 18px; font-weight: 800; color: var(--azul); margin-bottom: 6px; }
+  .admin-box p { font-size: 13px; color: var(--gris); margin-bottom: 20px; }
+  .admin-box input {
+    width: 100%; background: #2C2C2E; border: 1.5px solid #3C3C3E;
+    border-radius: 10px; padding: 12px 14px;
+    color: var(--blanco); font-size: 16px; font-family: inherit; outline: none;
+    letter-spacing: 4px; text-align: center; margin-bottom: 12px;
+    transition: border-color 0.2s;
+  }
+  .admin-box input:focus { border-color: var(--azul); }
+  .btn-admin-login {
+    width: 100%; background: var(--azul); color: #fff;
+    border: none; border-radius: 10px; padding: 13px;
+    font-size: 14px; font-weight: 800; cursor: pointer; margin-bottom: 8px;
+  }
+  .btn-admin-cancel {
+    width: 100%; background: transparent; color: var(--gris);
+    border: none; padding: 10px; font-size: 13px; cursor: pointer;
+  }
+  .admin-error { color: var(--rojo); font-size: 12px; text-align: center; margin-top: -8px; display: none; }
+
+  /* MODO CLIC */
+  #map.modo-clic { cursor: crosshair; }
+  .modo-clic-banner {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    background: var(--amarillo); color: var(--asfalto);
+    font-size: 12px; font-weight: 800; padding: 8px 16px;
+    border-radius: 20px; z-index: 400; display: none; white-space: nowrap;
+  }
+  .modo-clic-banner.visible { display: block; }
+
+  /* LOADING */
+  #loading {
+    position: fixed; inset: 0; background: var(--asfalto);
+    z-index: 9999; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 16px;
+  }
+  .loading-logo {
+    width: 60px; height: 60px; background: var(--amarillo);
+    border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+    animation: bounce 0.8s ease infinite alternate;
+  }
+  @keyframes bounce {
+    from { transform: rotate(-45deg) translateY(0); }
+    to { transform: rotate(-45deg) translateY(-10px); }
+  }
+  #loading p { color: var(--gris); font-size: 13px; }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="loading-logo"></div>
+  <p>Cargando mapa de Cabudare...</p>
+</div>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon"></div>
+    <div class="logo-text">
+      <strong>HuecosMapa</strong>
+      <span>Cabudare · Lara</span>
+    </div>
+  </div>
+  <div class="header-right">
+    <span class="admin-active-badge" id="admin-badge">⚙️ ADMIN</span>
+    <div id="contador-badge">0 reportes</div>
+    <button id="btn-admin-header" title="Panel admin">⚙️</button>
+  </div>
+</header>
+
+<div style="position:relative; flex:1; display:flex;">
+  <div id="map"></div>
+  <div class="modo-clic-banner" id="banner-clic">📍 Toca el mapa donde está el hueco</div>
+
+  <!-- LEYENDA -->
+  <div class="leyenda">
+    <div class="leyenda-item"><div class="leyenda-dot" style="background:var(--verde)"></div>Pequeño</div>
+    <div class="leyenda-item"><div class="leyenda-dot" style="background:var(--naranja)"></div>Mediano</div>
+    <div class="leyenda-item"><div class="leyenda-dot" style="background:var(--rojo)"></div>Grande</div>
+    <div class="leyenda-item"><div class="leyenda-dot" style="background:var(--azul)"></div>Pend. verificar</div>
+    <div class="leyenda-item"><div class="leyenda-dot" style="background:#4B5563"></div>Arreglado ✓</div>
+  </div>
+
+  <div class="fab-container">
+    <button class="fab fab-gps" id="btn-gps" title="Mi ubicación">📍</button>
+    <button class="fab fab-list" id="btn-lista" title="Ver reportes">📋</button>
+  </div>
+</div>
+
+<div class="bottom-panel">
+  <p class="panel-hint">Toca el mapa o usa tu GPS</p>
+  <button class="btn-reportar" id="btn-reportar-principal">⚠️ Reportar un hueco</button>
+</div>
+
+<!-- MODAL FORMULARIO -->
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <h2>Reportar hueco</h2>
+      <p id="modal-coords-text">Ubicación no definida</p>
+    </div>
+    <div class="modal-body">
+      <div class="field">
+        <label>Tu nombre (opcional)</label>
+        <input type="text" id="input-nombre" placeholder="Ciudadano anónimo" maxlength="60"/>
+      </div>
+      <div class="field">
+        <label>Nivel de gravedad</label>
+        <div class="gravedad-grid">
+          <button class="gravedad-btn" data-g="pequeño"><span class="emoji">🟡</span>Pequeño</button>
+          <button class="gravedad-btn" data-g="mediano"><span class="emoji">🟠</span>Mediano</button>
+          <button class="gravedad-btn" data-g="grande"><span class="emoji">🔴</span>Grande</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>Descripción</label>
+        <textarea id="input-desc" placeholder="Ej: Hueco frente a la farmacia, peligroso para motos..."></textarea>
+      </div>
+      <div class="field">
+        <label>Foto del hueco</label>
+        <div class="foto-area" id="foto-area" onclick="document.getElementById('input-foto').click()">
+          <div class="icon">📷</div>
+          <p>Toca para tomar o subir foto</p>
+          <input type="file" id="input-foto" accept="image/*" capture="environment" style="display:none"/>
+          <img id="foto-preview" alt="Preview"/>
+        </div>
+      </div>
+      <div class="field">
+        <label>Coordenadas</label>
+        <div class="coords-display">
+          <div class="coords-dot pending" id="coords-dot"></div>
+          <span id="coords-text">Sin ubicación — toca el mapa o usa GPS</span>
+        </div>
+      </div>
+      <button class="btn-enviar" id="btn-enviar" disabled>Enviar reporte</button>
+      <button class="btn-cancelar" id="btn-cancelar">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL LISTA -->
+<div class="lista-overlay" id="lista-overlay">
+  <div class="lista-modal">
+    <div class="modal-handle" style="margin:12px auto 0; width:36px; height:4px; background:#3C3C3E; border-radius:2px;"></div>
+    <div class="lista-header">
+      <h2>Huecos reportados</h2>
+      <button class="btn-cerrar-lista" id="btn-cerrar-lista">✕</button>
+    </div>
+    <div class="lista-filtros">
+      <button class="filtro-btn active" data-f="todos">Todos</button>
+      <button class="filtro-btn" data-f="grande">🔴 Grandes</button>
+      <button class="filtro-btn" data-f="mediano">🟠 Medianos</button>
+      <button class="filtro-btn" data-f="pequeño">🟡 Pequeños</button>
+      <button class="filtro-btn" data-f="pendiente">🔵 Por verificar</button>
+      <button class="filtro-btn" data-f="arreglado">✅ Arreglados</button>
+    </div>
+    <div class="lista-items" id="lista-items"></div>
+  </div>
+</div>
+
+<!-- PANEL LOGIN ADMIN -->
+<div class="admin-overlay" id="admin-overlay">
+  <div class="admin-box">
+    <h2>⚙️ Panel Admin</h2>
+    <p id="admin-box-desc">Ingresa la clave para activar el modo administrador.</p>
+    <input type="password" id="admin-input" placeholder="••••••" maxlength="20"/>
+    <p class="admin-error" id="admin-error">Clave incorrecta</p>
+    <button class="btn-admin-login" id="btn-admin-login">Entrar</button>
+    <button class="btn-admin-cancel" id="btn-admin-cancel">Cancelar</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ─── CONFIG ────────────────────────────────────────
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwbMzWATG0V0LvzaT6rDVwvuwM9nwynCJkM3Qj3oKw9VBeeglezAHUSnu8F0uB2UBK1/exec';
+const ADMIN_PASS = 'cabudare2025';   // ← cambia esta clave
+const CABUDARE_CENTER = [10.0292, -69.2717];
+
+// ─── ESTADO ────────────────────────────────────────
+let mapa, marcadorTemp = null, gravedadSeleccionada = null;
+let lat = null, lng = null, fotoBase64 = null;
+let reportes = [], marcadores = [];
+let modoClic = false, esAdmin = false;
+let filtroActivo = 'todos';
+
+// ─── ÍCONOS ────────────────────────────────────────
+function iconoHueco(estado, gravedad) {
+  const colores = {
+    activo: { pequeño:'#22C55E', mediano:'#F97316', grande:'#EF4444' },
+    pendiente: '#3B82F6',
+    arreglado: '#4B5563'
+  };
+  let color;
+  if (estado === 'pendiente') color = colores.pendiente;
+  else if (estado === 'arreglado') color = colores.arreglado;
+  else color = colores.activo[gravedad] || '#F5C518';
+
+  const size = estado === 'arreglado' ? 22 : 28;
+  const opacity = estado === 'arreglado' ? 0.6 : 1;
+  const check = estado === 'arreglado' ? `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(45deg);color:#fff;font-size:10px;">✓</div>` : '';
+
+  return L.divIcon({
+    className: '',
+    html: `<div style="position:relative;width:${size}px;height:${size}px;background:${color};border:3px solid #fff;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 2px 8px rgba(0,0,0,0.5);opacity:${opacity};">${check}</div>`,
+    iconSize: [size, size],
+    iconAnchor: [size/2, size],
+    popupAnchor: [0, -(size+4)]
+  });
+}
+
+const iconoTemp = L.divIcon({
+  className: '',
+  html: `<div style="width:32px;height:32px;background:#F5C518;border:3px solid #fff;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 2px 12px rgba(245,197,24,0.5);"></div>`,
+  iconSize: [32,32], iconAnchor: [16,32]
+});
+
+// ─── POPUP ─────────────────────────────────────────
+function buildPopup(r, idx) {
+  const estadoTag = r.estado === 'pendiente'
+    ? `<span class="gravedad-tag pendiente">🔵 Pendiente verificación</span>`
+    : r.estado === 'arreglado'
+    ? `<span class="gravedad-tag arreglado">✅ Arreglado</span>`
+    : `<span class="gravedad-tag ${r.gravedad}">${r.gravedad}</span>`;
+
+  const fotoHtml = r.foto ? `<img src="${r.foto}" style="width:100%;border-radius:8px;margin-top:8px;max-height:120px;object-fit:cover;"/>` : '';
+
+  let acciones = '';
+  if (r.estado === 'activo') {
+    acciones = `<button class="btn-popup btn-ya-taparon" onclick="ciudadanoReportaArreglo(${idx})">🔵 Ya lo taparon</button>`;
+  }
+  if (esAdmin && r.estado === 'pendiente') {
+    acciones = `
+      <button class="btn-popup btn-admin-confirmar" onclick="adminConfirmaArreglo(${idx})">✅ Confirmar arreglo</button>
+      <button class="btn-popup btn-admin-rechazar" onclick="adminRechazaArreglo(${idx})">↩️ Rechazar (sigue activo)</button>
+    `;
+  }
+  if (esAdmin && r.estado === 'activo') {
+    acciones = `
+      <button class="btn-popup btn-ya-taparon" onclick="ciudadanoReportaArreglo(${idx})">🔵 Ya lo taparon</button>
+      <button class="btn-popup btn-admin-confirmar" style="margin-top:6px;" onclick="adminConfirmaArreglo(${idx})">✅ Marcar como arreglado (admin)</button>
+    `;
+  }
+
+  return `
+    <div class="popup-content">
+      <h3>⚠️ Hueco #${idx+1}</h3>
+      <p><strong>Por:</strong> ${r.nombre}</p>
+      ${r.descripcion ? `<p>${r.descripcion}</p>` : ''}
+      <p><small>${r.fecha}</small></p>
+      ${fotoHtml}
+      <div class="popup-tags">${estadoTag}</div>
+      ${acciones}
+    </div>
+  `;
+}
+
+function refreshPopup(idx) {
+  if (marcadores[idx]) {
+    marcadores[idx].setIcon(iconoHueco(reportes[idx].estado, reportes[idx].gravedad));
+    marcadores[idx].setPopupContent(buildPopup(reportes[idx], idx));
+  }
+}
+
+// ─── ACCIONES ESTADO ────────────────────────────────
+window.ciudadanoReportaArreglo = function(idx) {
+  reportes[idx].estado = 'pendiente';
+  guardarLocal();
+  refreshPopup(idx);
+  showToast('🔵 Reporte enviado — el admin verificará', 'info');
+  actualizarContador();
+};
+
+window.adminConfirmaArreglo = function(idx) {
+  reportes[idx].estado = 'arreglado';
+  guardarLocal();
+  refreshPopup(idx);
+  mapa.closePopup();
+  showToast('✅ Arreglo confirmado', 'success');
+  actualizarContador();
+};
+
+window.adminRechazaArreglo = function(idx) {
+  reportes[idx].estado = 'activo';
+  guardarLocal();
+  refreshPopup(idx);
+  showToast('↩️ Reporte vuelto a activo', 'info');
+  actualizarContador();
+};
+
+// ─── MAPA ──────────────────────────────────────────
+function initMapa() {
+  mapa = L.map('map', { center: CABUDARE_CENTER, zoom: 14, zoomControl: false });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap', maxZoom: 19
+  }).addTo(mapa);
+  L.control.zoom({ position: 'topleft' }).addTo(mapa);
+
+  mapa.on('click', (e) => {
+    if (!modoClic) return;
+    setUbicacion(e.latlng.lat, e.latlng.lng);
+    desactivarModoClic();
+    abrirFormulario();
+  });
+
+  document.getElementById('loading').style.display = 'none';
+  cargarReportesGuardados();
+}
+
+// ─── UBICACIÓN ─────────────────────────────────────
+function setUbicacion(lt, lg) {
+  lat = lt; lng = lg;
+  document.getElementById('coords-text').textContent = `${lt.toFixed(6)}, ${lg.toFixed(6)}`;
+  document.getElementById('coords-dot').classList.remove('pending');
+  document.getElementById('modal-coords-text').textContent = `${lt.toFixed(5)}, ${lg.toFixed(5)}`;
+  validarFormulario();
+  if (marcadorTemp) mapa.removeLayer(marcadorTemp);
+  marcadorTemp = L.marker([lt, lg], { icon: iconoTemp }).addTo(mapa);
+  mapa.setView([lt, lg], Math.max(mapa.getZoom(), 17));
+}
+
+function activarModoClic() {
+  modoClic = true;
+  document.getElementById('map').classList.add('modo-clic');
+  document.getElementById('banner-clic').classList.add('visible');
+}
+function desactivarModoClic() {
+  modoClic = false;
+  document.getElementById('map').classList.remove('modo-clic');
+  document.getElementById('banner-clic').classList.remove('visible');
+}
+
+function usarGPS() {
+  if (!navigator.geolocation) { showToast('GPS no disponible', 'error'); return; }
+  showToast('Obteniendo ubicación GPS...', '');
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      setUbicacion(pos.coords.latitude, pos.coords.longitude);
+      showToast('✅ Ubicación GPS obtenida', 'success');
+    },
+    () => showToast('No se pudo obtener el GPS', 'error'),
+    { enableHighAccuracy: true, timeout: 10000 }
+  );
+}
+
+// ─── FORMULARIO ────────────────────────────────────
+function abrirFormulario() { document.getElementById('modal-overlay').classList.add('active'); }
+
+function cerrarFormulario() {
+  document.getElementById('modal-overlay').classList.remove('active');
+  resetFormulario();
+}
+
+function resetFormulario() {
+  lat = null; lng = null; fotoBase64 = null; gravedadSeleccionada = null;
+  document.getElementById('input-nombre').value = '';
+  document.getElementById('input-desc').value = '';
+  document.getElementById('coords-text').textContent = 'Sin ubicación — toca el mapa o usa GPS';
+  document.getElementById('coords-dot').classList.add('pending');
+  document.getElementById('modal-coords-text').textContent = 'Ubicación no definida';
+  document.getElementById('foto-preview').style.display = 'none';
+  document.getElementById('foto-preview').src = '';
+  document.getElementById('input-foto').value = '';
+  document.querySelectorAll('.gravedad-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('btn-enviar').disabled = true;
+  if (marcadorTemp) { mapa.removeLayer(marcadorTemp); marcadorTemp = null; }
+}
+
+function validarFormulario() {
+  document.getElementById('btn-enviar').disabled = !(lat !== null && gravedadSeleccionada !== null);
+}
+
+document.getElementById('input-foto').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    fotoBase64 = ev.target.result;
+    const p = document.getElementById('foto-preview');
+    p.src = fotoBase64; p.style.display = 'block';
+    document.querySelector('.foto-area p').textContent = '✅ Foto lista';
+  };
+  reader.readAsDataURL(file);
+});
+
+document.querySelectorAll('.gravedad-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.gravedad-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    gravedadSeleccionada = btn.dataset.g;
+    validarFormulario();
+  });
+});
+
+// ─── ENVÍO ─────────────────────────────────────────
+document.getElementById('btn-enviar').addEventListener('click', async () => {
+  const nombre = document.getElementById('input-nombre').value.trim() || 'Anónimo';
+  const desc = document.getElementById('input-desc').value.trim();
+  const btn = document.getElementById('btn-enviar');
+  btn.disabled = true; btn.textContent = 'Enviando...';
+
+  const reporte = {
+    id: Date.now(),
+    nombre, gravedad: gravedadSeleccionada, descripcion: desc,
+    lat, lng,
+    fecha: new Date().toLocaleString('es-VE', { timeZone: 'America/Caracas' }),
+    foto: fotoBase64 || '',
+    estado: 'activo'  // activo | pendiente | arreglado
+  };
+
+  reportes.push(reporte);
+  guardarLocal();
+  const idx = reportes.length - 1;
+  agregarPinMapa(reporte, idx);
+  actualizarContador();
+
+  if (APPS_SCRIPT_URL !== 'TU_URL_DE_APPS_SCRIPT_AQUI') {
+    try {
+      await fetch(APPS_SCRIPT_URL, {
+        method: 'POST', mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reporte)
+      });
+      showToast('✅ Reporte enviado', 'success');
+    } catch { showToast('⚠️ Guardado localmente', 'error'); }
+  } else {
+    showToast('✅ Reporte registrado en el mapa', 'success');
+  }
+
+  btn.textContent = 'Enviar reporte';
+  cerrarFormulario();
+});
+
+// ─── PINS ──────────────────────────────────────────
+function agregarPinMapa(r, idx) {
+  const m = L.marker([r.lat, r.lng], { icon: iconoHueco(r.estado, r.gravedad) }).addTo(mapa);
+  m.bindPopup(buildPopup(r, idx), { maxWidth: 260 });
+  marcadores[idx] = m;
+}
+
+// ─── STORAGE ───────────────────────────────────────
+function guardarLocal() {
+  try { localStorage.setItem('huecos_cabudare', JSON.stringify(reportes)); } catch {}
+}
+
+async function cargarReportesGuardados() {
+  // Carga local inmediata
+  try {
+    const local = JSON.parse(localStorage.getItem('huecos_cabudare') || '[]');
+    reportes = local;
+    reportes.forEach((r, i) => {
+      if (!r.estado) r.estado = 'activo';
+      agregarPinMapa(r, i);
+    });
+    actualizarContador();
+  } catch {}
+
+  // Sincroniza desde Google Sheets
+  if (APPS_SCRIPT_URL && !APPS_SCRIPT_URL.includes('TU_URL')) {
+    try {
+      const res = await fetch(APPS_SCRIPT_URL);
+      const json = await res.json();
+      if (json.ok && json.reportes && json.reportes.length > 0) {
+        marcadores.forEach(m => m && mapa.removeLayer(m));
+        marcadores = [];
+        reportes = json.reportes.map(r => ({
+          id: r.id,
+          nombre: r.nombre,
+          gravedad: r.gravedad,
+          descripcion: r.descripcion,
+          lat: parseFloat(r.lat),
+          lng: parseFloat(r.lng),
+          fecha: r.fecha,
+          foto: r.foto || '',
+          estado: r.estado || 'activo'
+        })).filter(r => !isNaN(r.lat) && !isNaN(r.lng));
+        reportes.forEach((r, i) => agregarPinMapa(r, i));
+        guardarLocal();
+        actualizarContador();
+        showToast('📡 Mapa sincronizado', 'success');
+      }
+    } catch {
+      // Sin internet, usa los datos locales
+    }
+  }
+}
+
+// ─── LISTA ─────────────────────────────────────────
+function abrirLista() {
+  renderLista();
+  document.getElementById('lista-overlay').classList.add('active');
+}
+
+function renderLista() {
+  const container = document.getElementById('lista-items');
+  const filtrados = filtroActivo === 'todos'
+    ? reportes : reportes.filter(r => r.estado === filtroActivo || r.gravedad === filtroActivo);
+
+  if (filtrados.length === 0) {
+    container.innerHTML = `<div class="lista-vacia"><div class="icon">🛣️</div><p>Sin reportes en esta categoría.</p></div>`;
+    return;
+  }
+
+  container.innerHTML = filtrados.slice().reverse().map((r) => {
+    const idx = reportes.indexOf(r);
+    const tag = r.estado !== 'activo'
+      ? `<span class="gravedad-tag ${r.estado}">${r.estado === 'pendiente' ? '🔵 Por verificar' : '✅ Arreglado'}</span>`
+      : `<span class="gravedad-tag ${r.gravedad}">${r.gravedad}</span>`;
+    return `
+      <div class="lista-item ${r.estado !== 'activo' ? r.estado : r.gravedad}" onclick="irAReporte(${idx})">
+        <div class="lista-item-top">
+          <span class="lista-item-nombre">👤 ${r.nombre}</span>
+          ${tag}
+        </div>
+        ${r.descripcion ? `<p class="lista-item-desc">${r.descripcion}</p>` : ''}
+        <p class="lista-item-fecha">${r.fecha}</p>
+      </div>
+    `;
+  }).join('');
+}
+
+function irAReporte(idx) {
+  document.getElementById('lista-overlay').classList.remove('active');
+  mapa.setView([reportes[idx].lat, reportes[idx].lng], 18);
+  setTimeout(() => marcadores[idx] && marcadores[idx].openPopup(), 400);
+}
+
+// Filtros lista
+document.querySelectorAll('.filtro-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filtro-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    filtroActivo = btn.dataset.f;
+    renderLista();
+  });
+});
+
+// ─── CONTADOR ──────────────────────────────────────
+function actualizarContador() {
+  const activos = reportes.filter(r => r.estado !== 'arreglado').length;
+  const total = reportes.length;
+  document.getElementById('contador-badge').textContent =
+    total === 0 ? '0 reportes' : `${activos} activo${activos !== 1 ? 's' : ''} / ${total} total`;
+}
+
+// ─── ADMIN ─────────────────────────────────────────
+function abrirAdmin() {
+  if (esAdmin) {
+    // Si ya es admin, cerrar sesión
+    esAdmin = false;
+    document.getElementById('admin-badge').classList.remove('visible');
+    showToast('Sesión admin cerrada', 'info');
+    // Refrescar todos los popups
+    reportes.forEach((r, i) => refreshPopup(i));
+    return;
+  }
+  document.getElementById('admin-input').value = '';
+  document.getElementById('admin-error').style.display = 'none';
+  document.getElementById('admin-overlay').classList.add('active');
+  setTimeout(() => document.getElementById('admin-input').focus(), 300);
+}
+
+document.getElementById('btn-admin-login').addEventListener('click', () => {
+  const val = document.getElementById('admin-input').value;
+  if (val === ADMIN_PASS) {
+    esAdmin = true;
+    document.getElementById('admin-overlay').classList.remove('active');
+    document.getElementById('admin-badge').classList.add('visible');
+    showToast('✅ Modo admin activado', 'success');
+    reportes.forEach((r, i) => refreshPopup(i));
+  } else {
+    document.getElementById('admin-error').style.display = 'block';
+    document.getElementById('admin-input').value = '';
+    document.getElementById('admin-input').focus();
+  }
+});
+
+document.getElementById('admin-input').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') document.getElementById('btn-admin-login').click();
+});
+
+// ─── TOAST ─────────────────────────────────────────
+function showToast(msg, tipo) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `toast ${tipo} show`;
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ─── EVENTOS ───────────────────────────────────────
+document.getElementById('btn-reportar-principal').addEventListener('click', activarModoClic);
+document.getElementById('btn-gps').addEventListener('click', () => {
+  usarGPS();
+  setTimeout(() => { if (lat !== null) abrirFormulario(); }, 2500);
+});
+document.getElementById('btn-lista').addEventListener('click', abrirLista);
+document.getElementById('btn-cancelar').addEventListener('click', () => { desactivarModoClic(); cerrarFormulario(); });
+document.getElementById('btn-cerrar-lista').addEventListener('click', () => document.getElementById('lista-overlay').classList.remove('active'));
+document.getElementById('btn-admin-header').addEventListener('click', abrirAdmin);
+document.getElementById('btn-admin-cancel').addEventListener('click', () => document.getElementById('admin-overlay').classList.remove('active'));
+
+document.getElementById('modal-overlay').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('modal-overlay')) cerrarFormulario();
+});
+document.getElementById('lista-overlay').addEventListener('click', (e) => {
+  if (e.target === document.getElementById('lista-overlay')) document.getElementById('lista-overlay').classList.remove('active');
+});
+
+window.addEventListener('load', initMapa);
+</script>
+</body>
+</html>
