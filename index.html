@@ -370,6 +370,47 @@
   }
   .modo-clic-banner.visible { display: block; }
 
+  /* BIENVENIDA */
+  .bienvenida-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.92);
+    z-index: 4000; display: flex; align-items: flex-end; justify-content: center;
+    padding: 0;
+  }
+  .bienvenida-box {
+    background: #1C1C1E; border-radius: 24px 24px 0 0;
+    width: 100%; max-width: 500px; padding: 28px 24px 36px;
+    animation: slideUp 0.4s ease;
+  }
+  .bienvenida-icon { font-size: 48px; text-align: center; margin-bottom: 12px; }
+  .bienvenida-box h2 {
+    font-size: 22px; font-weight: 800; color: var(--amarillo);
+    text-align: center; margin-bottom: 8px;
+  }
+  .bienvenida-box .sub {
+    font-size: 13px; color: var(--gris); text-align: center;
+    margin-bottom: 24px; line-height: 1.5;
+  }
+  .bienvenida-items { display: flex; flex-direction: column; gap: 14px; margin-bottom: 28px; }
+  .bienvenida-item { display: flex; align-items: flex-start; gap: 12px; }
+  .bienvenida-item .bi-icon {
+    font-size: 22px; flex-shrink: 0; width: 36px; height: 36px;
+    background: #2C2C2E; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .bienvenida-item .bi-texto strong { font-size: 13px; color: var(--blanco); display: block; margin-bottom: 2px; }
+  .bienvenida-item .bi-texto span { font-size: 12px; color: var(--gris); line-height: 1.4; }
+  .bienvenida-anonimo {
+    background: rgba(34,197,94,0.1); border: 1.5px solid rgba(34,197,94,0.3);
+    border-radius: 12px; padding: 12px 16px; margin-bottom: 20px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .bienvenida-anonimo span { font-size: 12px; color: var(--verde); line-height: 1.4; }
+  .btn-bienvenida {
+    width: 100%; background: var(--amarillo); color: var(--asfalto);
+    border: none; border-radius: 12px; padding: 15px;
+    font-size: 15px; font-weight: 800; cursor: pointer;
+  }
+
   /* LOADING */
   #loading {
     position: fixed; inset: 0; background: var(--asfalto);
@@ -513,11 +554,48 @@
   </div>
 </div>
 
+<!-- BIENVENIDA -->
+<div class="bienvenida-overlay" id="bienvenida-overlay">
+  <div class="bienvenida-box">
+    <div class="bienvenida-icon">🛣️</div>
+    <h2>HuecosMapa Cabudare</h2>
+    <p class="sub">La herramienta ciudadana para reportar huecos y baches<br>en las calles de nuestra ciudad.</p>
+    <div class="bienvenida-items">
+      <div class="bienvenida-item">
+        <div class="bi-icon">📍</div>
+        <div class="bi-texto">
+          <strong>Marca el hueco exacto</strong>
+          <span>Toca el mapa o usa tu GPS para ubicarlo con precisión.</span>
+        </div>
+      </div>
+      <div class="bienvenida-item">
+        <div class="bi-icon">📷</div>
+        <div class="bi-texto">
+          <strong>Agrega una foto</strong>
+          <span>Una imagen vale más que mil palabras. Ayuda a documentar el problema.</span>
+        </div>
+      </div>
+      <div class="bienvenida-item">
+        <div class="bi-icon">🤝</div>
+        <div class="bi-texto">
+          <strong>Entre todos lo resolvemos</strong>
+          <span>Cada reporte cuenta. Juntos construimos un registro visible del estado de nuestras calles.</span>
+        </div>
+      </div>
+    </div>
+    <div class="bienvenida-anonimo">
+      <span>🔒</span>
+      <span><strong style="color:var(--verde)">100% anónimo.</strong> No guardamos tu IP, ubicación permanente ni ningún dato personal. El nombre es opcional. Tus reportes no te identifican.</span>
+    </div>
+    <button class="btn-bienvenida" id="btn-bienvenida-ok">Entendido — Ver el mapa</button>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
 // ─── CONFIG ────────────────────────────────────────
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyOv4Y9p0-NoBvNq13b1XM95J0SA3V2CoRgSen0m6PFYZ3sC6XuJv-bmsX8llATDWIk/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbygH390iTDLX5SH2GWCcmLW_UTGM6dpDewVkbgeEcF-P544hCoibrYw9QpbOmCvx2Bm/exec';
 const ADMIN_PASS = 'cabudare2025';   // ← cambia esta clave
 const CABUDARE_CENTER = [10.0292, -69.2717];
 
@@ -760,13 +838,26 @@ document.getElementById('btn-enviar').addEventListener('click', async () => {
 
   if (APPS_SCRIPT_URL !== 'TU_URL_DE_APPS_SCRIPT_AQUI') {
     try {
-      await fetch(APPS_SCRIPT_URL, {
-        method: 'POST', mode: 'no-cors',
+      const resp = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(reporte)
       });
-      showToast('✅ Reporte enviado', 'success');
-    } catch { showToast('⚠️ Guardado localmente', 'error'); }
+      const result = await resp.json();
+      if (result.bloqueado) {
+        // Reporte rechazado por moderación — quitar de lista y mapa
+        reportes.pop();
+        if (marcadores[marcadores.length-1]) {
+          mapa.removeLayer(marcadores[marcadores.length-1]);
+          marcadores.pop();
+        }
+        guardarLocal();
+        actualizarContador();
+        showToast('🚫 Reporte rechazado: contenido inapropiado', 'error');
+      } else {
+        showToast('✅ Reporte enviado y aprobado', 'success');
+      }
+    } catch { showToast('⚠️ Sin conexión — guardado localmente', 'error'); }
   } else {
     showToast('✅ Reporte registrado en el mapa', 'success');
   }
@@ -950,7 +1041,23 @@ document.getElementById('lista-overlay').addEventListener('click', (e) => {
   if (e.target === document.getElementById('lista-overlay')) document.getElementById('lista-overlay').classList.remove('active');
 });
 
-window.addEventListener('load', initMapa);
+// ─── BIENVENIDA ────────────────────────────────────
+function checkBienvenida() {
+  const visto = localStorage.getItem('huecos_bienvenida');
+  if (!visto) {
+    document.getElementById('bienvenida-overlay').style.display = 'flex';
+  }
+}
+
+document.getElementById('btn-bienvenida-ok').addEventListener('click', () => {
+  localStorage.setItem('huecos_bienvenida', '1');
+  document.getElementById('bienvenida-overlay').style.display = 'none';
+});
+
+window.addEventListener('load', () => {
+  initMapa();
+  setTimeout(checkBienvenida, 800);
+});
 </script>
 </body>
 </html>
