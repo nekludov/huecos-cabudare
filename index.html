@@ -595,7 +595,7 @@
 
 <script>
 // ─── CONFIG ────────────────────────────────────────
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbygH390iTDLX5SH2GWCcmLW_UTGM6dpDewVkbgeEcF-P544hCoibrYw9QpbOmCvx2Bm/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzTjEdgRAMpnS1sFw8GQMlj8FzeuTi-Ob0VK3hUBSo837sNdd7QT_cq_QAvd5NLATKQ/exec';
 const ADMIN_PASS = 'cabudare2025';   // ← cambia esta clave
 const CABUDARE_CENTER = [10.0292, -69.2717];
 
@@ -838,14 +838,8 @@ document.getElementById('btn-enviar').addEventListener('click', async () => {
 
   if (APPS_SCRIPT_URL !== 'TU_URL_DE_APPS_SCRIPT_AQUI') {
     try {
-      const resp = await fetch(APPS_SCRIPT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(reporte)
-      });
-      const result = await resp.json();
-      if (result.bloqueado) {
-        // Reporte rechazado por moderación — quitar de lista y mapa
+      const result = await enviarConJsonp(reporte);
+      if (result && result.bloqueado) {
         reportes.pop();
         if (marcadores[marcadores.length-1]) {
           mapa.removeLayer(marcadores[marcadores.length-1]);
@@ -854,8 +848,10 @@ document.getElementById('btn-enviar').addEventListener('click', async () => {
         guardarLocal();
         actualizarContador();
         showToast('🚫 Reporte rechazado: contenido inapropiado', 'error');
-      } else {
+      } else if (result && result.ok) {
         showToast('✅ Reporte enviado y aprobado', 'success');
+      } else {
+        showToast('✅ Reporte registrado', 'success');
       }
     } catch { showToast('⚠️ Sin conexión — guardado localmente', 'error'); }
   } else {
@@ -1020,6 +1016,37 @@ function showToast(msg, tipo) {
   t.textContent = msg;
   t.className = `toast ${tipo} show`;
   setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ─── JSONP HELPER ──────────────────────────────────
+function enviarConJsonp(datos) {
+  return new Promise((resolve, reject) => {
+    const cbName = 'cb_' + Date.now();
+    const timeout = setTimeout(() => {
+      delete window[cbName];
+      reject(new Error('timeout'));
+    }, 15000);
+
+    window[cbName] = function(result) {
+      clearTimeout(timeout);
+      delete window[cbName];
+      const script = document.getElementById('jsonp-script');
+      if (script) script.remove();
+      resolve(result);
+    };
+
+    const params = encodeURIComponent(JSON.stringify(datos));
+    const url = APPS_SCRIPT_URL + '?callback=' + cbName + '&data=' + params;
+    const script = document.createElement('script');
+    script.id = 'jsonp-script';
+    script.src = url;
+    script.onerror = () => {
+      clearTimeout(timeout);
+      delete window[cbName];
+      reject(new Error('script error'));
+    };
+    document.body.appendChild(script);
+  });
 }
 
 // ─── EVENTOS ───────────────────────────────────────
