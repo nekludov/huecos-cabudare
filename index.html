@@ -838,7 +838,9 @@ document.getElementById('btn-enviar').addEventListener('click', async () => {
 
   if (APPS_SCRIPT_URL !== 'TU_URL_DE_APPS_SCRIPT_AQUI') {
     try {
-      const result = await enviarConJsonp(reporte);
+      // Excluir foto del envío (URL demasiado larga para JSONP)
+    const reporteSinFoto = { ...reporte, foto: '' };
+    const result = await enviarConJsonp(reporteSinFoto);
       if (result && result.bloqueado) {
         reportes.pop();
         if (marcadores[marcadores.length-1]) {
