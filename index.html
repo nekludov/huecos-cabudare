@@ -595,7 +595,7 @@
 
 <script>
 // ─── CONFIG ────────────────────────────────────────
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyNFRcSei-3Qj5HlPdA-QKEVQSm7F1bD8rfg23tDUCkSm2Y7v1-LLcj7HkdaV4GvMsV/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzXsZltuGXTd_P57SdFPxEhIAdiTmeoSkSEopbx1ZxT6NNFMMn8X066Do8SN6r-xWMx/exec';
 const ADMIN_PASS = 'cabudare2025';   // ← cambia esta clave
 const CABUDARE_CENTER = [10.0292, -69.2717];
 
@@ -838,9 +838,7 @@ document.getElementById('btn-enviar').addEventListener('click', async () => {
 
   if (APPS_SCRIPT_URL !== 'TU_URL_DE_APPS_SCRIPT_AQUI') {
     try {
-      // Excluir foto del envío (URL demasiado larga para JSONP)
-    const reporteSinFoto = { ...reporte, foto: '' };
-    const result = await enviarConJsonp(reporteSinFoto);
+      const result = await enviarConJsonp(reporte);
       if (result && result.bloqueado) {
         reportes.pop();
         if (marcadores[marcadores.length-1]) {
@@ -851,6 +849,12 @@ document.getElementById('btn-enviar').addEventListener('click', async () => {
         actualizarContador();
         showToast('🚫 Reporte rechazado: contenido inapropiado', 'error');
       } else if (result && result.ok) {
+        // Reemplazar foto base64 por URL de Drive para no saturar localStorage
+        if (result.foto) {
+          reportes[reportes.length-1].foto = result.foto;
+          guardarLocal();
+          refreshPopup(reportes.length-1);
+        }
         showToast('✅ Reporte enviado y aprobado', 'success');
       } else {
         showToast('✅ Reporte registrado', 'success');
@@ -900,7 +904,7 @@ async function cargarReportesGuardados() {
           id: r.id,
           nombre: r.nombre,
           gravedad: r.gravedad,
-          descripcion: r.descripcion,
+          descripcion: r['descripción'] || r.descripcion,
           lat: parseFloat(r.lat),
           lng: parseFloat(r.lng),
           fecha: r.fecha,
@@ -1023,16 +1027,22 @@ function showToast(msg, tipo) {
 // ─── JSONP HELPER ──────────────────────────────────
 function enviarConJsonp(datos) {
   return new Promise((resolve, reject) => {
-    const cbName = 'cb_' + Date.now();
+    const cbName = 'cb_' + Date.now() + '_' + Math.floor(Math.random()*10000);
+    let resuelto = false;
+
     const timeout = setTimeout(() => {
+      if (resuelto) return;
+      resuelto = true;
       delete window[cbName];
       reject(new Error('timeout'));
     }, 15000);
 
     window[cbName] = function(result) {
+      if (resuelto) return;
+      resuelto = true;
       clearTimeout(timeout);
       delete window[cbName];
-      const script = document.getElementById('jsonp-script');
+      const script = document.getElementById(cbName + '_script');
       if (script) script.remove();
       resolve(result);
     };
@@ -1040,12 +1050,18 @@ function enviarConJsonp(datos) {
     const params = encodeURIComponent(JSON.stringify(datos));
     const url = APPS_SCRIPT_URL + '?callback=' + cbName + '&data=' + params;
     const script = document.createElement('script');
-    script.id = 'jsonp-script';
+    script.id = cbName + '_script';
     script.src = url;
     script.onerror = () => {
-      clearTimeout(timeout);
-      delete window[cbName];
-      reject(new Error('script error'));
+      // Apps Script a veces dispara onerror por el redirect 302 aunque el
+      // callback se ejecute correctamente. Esperamos un poco antes de rechazar.
+      setTimeout(() => {
+        if (resuelto) return;
+        resuelto = true;
+        clearTimeout(timeout);
+        delete window[cbName];
+        reject(new Error('script error'));
+      }, 1500);
     };
     document.body.appendChild(script);
   });
