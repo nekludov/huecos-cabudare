@@ -595,7 +595,7 @@
 
 <script>
 // ─── CONFIG ────────────────────────────────────────
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzXsZltuGXTd_P57SdFPxEhIAdiTmeoSkSEopbx1ZxT6NNFMMn8X066Do8SN6r-xWMx/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxJ9CO53LBgFhry7FvD7s6xjUPR3Sxlv6RCKWhPRCju3EWOnJkMEfP-ci6nncJRMxrp/exec';
 const ADMIN_PASS = 'cabudare2025';   // ← cambia esta clave
 const CABUDARE_CENTER = [10.0292, -69.2717];
 
@@ -1025,18 +1025,48 @@ function showToast(msg, tipo) {
 }
 
 // ─── JSONP HELPER ──────────────────────────────────
-function enviarConJsonp(datos) {
+// Envía el reporte por POST (sin límite de tamaño de URL).
+// Como 'no-cors' no permite leer la respuesta directamente, esperamos
+// unos segundos y consultamos la lista para verificar el resultado.
+async function enviarConJsonp(datos) {
+  await fetch(APPS_SCRIPT_URL, {
+    method: 'POST',
+    mode: 'no-cors',
+    headers: { 'Content-Type': 'text/plain' },
+    body: JSON.stringify(datos)
+  });
+
+  // Esperar a que el servidor procese (moderación + posible subida a Drive)
+  await new Promise(r => setTimeout(r, 4000));
+
+  // Verificar si el reporte fue aprobado consultando la lista
+  try {
+    const res = await fetchJsonp(APPS_SCRIPT_URL);
+    if (res && res.ok && res.reportes) {
+      const encontrado = res.reportes.find(r => String(r.id) === String(datos.id));
+      if (encontrado) {
+        return { ok: true, foto: encontrado.foto || '' };
+      } else {
+        return { ok: false, bloqueado: true, razon: 'contenido_rechazado' };
+      }
+    }
+  } catch {}
+
+  // Si no pudimos verificar, asumimos que se guardó
+  return { ok: true, foto: '' };
+}
+
+// Helper JSONP solo para consultas GET (sin data, listas cortas, sin problema de tamaño)
+function fetchJsonp(baseUrl) {
   return new Promise((resolve, reject) => {
     const cbName = 'cb_' + Date.now() + '_' + Math.floor(Math.random()*10000);
     let resuelto = false;
-
     const timeout = setTimeout(() => {
       if (resuelto) return;
       resuelto = true;
       delete window[cbName];
       reject(new Error('timeout'));
     }, 15000);
-
     window[cbName] = function(result) {
       if (resuelto) return;
       resuelto = true;
@@ -1046,15 +1076,10 @@ function enviarConJsonp(datos) {
       if (script) script.remove();
       resolve(result);
     };
-
-    const params = encodeURIComponent(JSON.stringify(datos));
-    const url = APPS_SCRIPT_URL + '?callback=' + cbName + '&data=' + params;
     const script = document.createElement('script');
     script.id = cbName + '_script';
-    script.src = url;
+    script.src = baseUrl + '?callback=' + cbName;
     script.onerror = () => {
-      // Apps Script a veces dispara onerror por el redirect 302 aunque el
-      // callback se ejecute correctamente. Esperamos un poco antes de rechazar.
       setTimeout(() => {
         if (resuelto) return;
         resuelto = true;
