@@ -211,6 +211,13 @@
   @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
   .coords-dot.pending { background: var(--gris); animation: none; }
 
+  .btn-cambiar-ubicacion {
+    background: transparent; border: none;
+    color: var(--gris); font-size: 12px;
+    padding: 6px 0; cursor: pointer;
+    text-decoration: underline; text-align: left;
+  }
+
   /* BOTONES */
   .btn-enviar {
     width: 100%; background: var(--amarillo); color: var(--asfalto);
@@ -515,6 +522,7 @@
           <div class="coords-dot pending" id="coords-dot"></div>
           <span id="coords-text">Sin ubicación — toca el mapa o usa GPS</span>
         </div>
+        <button type="button" class="btn-cambiar-ubicacion" id="btn-cambiar-ubicacion">🗺️ Corregir tocando el mapa</button>
       </div>
       <button class="btn-enviar" id="btn-enviar" disabled>Enviar reporte</button>
       <button class="btn-cancelar" id="btn-cancelar">Cancelar</button>
@@ -595,15 +603,17 @@
 
 <script>
 // ─── CONFIG ────────────────────────────────────────
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxJ9CO53LBgFhry7FvD7s6xjUPR3Sxlv6RCKWhPRCju3EWOnJkMEfP-ci6nncJRMxrp/exec';
-const ADMIN_PASS = 'cabudare2025';   // ← cambia esta clave
+// ↓ Cambia esto a tu URL de Render después del deploy
+const BACKEND_URL = 'https://TU-API.onrender.com';
+// Debe coincidir con ADMIN_PASSWORD en el .env del backend
+const ADMIN_PASS = 'cabudare2025';
 const CABUDARE_CENTER = [10.0292, -69.2717];
 
 // ─── ESTADO ────────────────────────────────────────
 let mapa, marcadorTemp = null, gravedadSeleccionada = null;
 let lat = null, lng = null, fotoBase64 = null;
 let reportes = [], marcadores = [];
-let modoClic = false, esAdmin = false;
+let modoClic = false, modoCambioUbicacion = false, esAdmin = false;
 let filtroActivo = 'todos';
 
 // ─── ÍCONOS ────────────────────────────────────────
@@ -620,7 +630,9 @@ function iconoHueco(estado, gravedad) {
 
   const size = estado === 'arreglado' ? 22 : 28;
   const opacity = estado === 'arreglado' ? 0.6 : 1;
-  const check = estado === 'arreglado' ? `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(45deg);color:#fff;font-size:10px;">✓</div>` : '';
+  const check = estado === 'arreglado'
+    ? `<div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(45deg);color:#fff;font-size:10px;">✓</div>`
+    : '';
 
   return L.divIcon({
     className: '',
@@ -645,7 +657,9 @@ function buildPopup(r, idx) {
     ? `<span class="gravedad-tag arreglado">✅ Arreglado</span>`
     : `<span class="gravedad-tag ${r.gravedad}">${r.gravedad}</span>`;
 
-  const fotoHtml = r.foto ? `<img src="${r.foto}" style="width:100%;border-radius:8px;margin-top:8px;max-height:120px;object-fit:cover;"/>` : '';
+  const fotoHtml = r.foto
+    ? `<img src="${r.foto}" style="width:100%;border-radius:8px;margin-top:8px;max-height:120px;object-fit:cover;"/>`
+    : '';
 
   let acciones = '';
   if (r.estado === 'activo') {
@@ -685,29 +699,53 @@ function refreshPopup(idx) {
 }
 
 // ─── ACCIONES ESTADO ────────────────────────────────
-window.ciudadanoReportaArreglo = function(idx) {
+window.ciudadanoReportaArreglo = async function(idx) {
+  const id = reportes[idx].id;
   reportes[idx].estado = 'pendiente';
   guardarLocal();
   refreshPopup(idx);
-  showToast('🔵 Reporte enviado — el admin verificará', 'info');
   actualizarContador();
+  showToast('🔵 Reportando — el admin verificará', 'info');
+  try {
+    await fetch(`${BACKEND_URL}/reportes/${id}/estado`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estado: 'pendiente' })
+    });
+  } catch {}
 };
 
-window.adminConfirmaArreglo = function(idx) {
+window.adminConfirmaArreglo = async function(idx) {
+  const id = reportes[idx].id;
   reportes[idx].estado = 'arreglado';
   guardarLocal();
   refreshPopup(idx);
   mapa.closePopup();
-  showToast('✅ Arreglo confirmado', 'success');
   actualizarContador();
+  showToast('✅ Arreglo confirmado', 'success');
+  try {
+    await fetch(`${BACKEND_URL}/reportes/${id}/estado`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estado: 'arreglado', adminKey: ADMIN_PASS })
+    });
+  } catch {}
 };
 
-window.adminRechazaArreglo = function(idx) {
+window.adminRechazaArreglo = async function(idx) {
+  const id = reportes[idx].id;
   reportes[idx].estado = 'activo';
   guardarLocal();
   refreshPopup(idx);
-  showToast('↩️ Reporte vuelto a activo', 'info');
   actualizarContador();
+  showToast('↩️ Reporte vuelto a activo', 'info');
+  try {
+    await fetch(`${BACKEND_URL}/reportes/${id}/estado`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estado: 'activo', adminKey: ADMIN_PASS })
+    });
+  } catch {}
 };
 
 // ─── MAPA ──────────────────────────────────────────
@@ -722,7 +760,12 @@ function initMapa() {
     if (!modoClic) return;
     setUbicacion(e.latlng.lat, e.latlng.lng);
     desactivarModoClic();
-    abrirFormulario();
+    if (modoCambioUbicacion) {
+      modoCambioUbicacion = false;
+      document.getElementById('modal-overlay').classList.add('active');
+    } else {
+      abrirFormulario();
+    }
   });
 
   document.getElementById('loading').style.display = 'none';
@@ -752,17 +795,37 @@ function desactivarModoClic() {
   document.getElementById('banner-clic').classList.remove('visible');
 }
 
-function usarGPS() {
+function usarGPS(onSuccess) {
   if (!navigator.geolocation) { showToast('GPS no disponible', 'error'); return; }
   showToast('Obteniendo ubicación GPS...', '');
   navigator.geolocation.getCurrentPosition(
     (pos) => {
       setUbicacion(pos.coords.latitude, pos.coords.longitude);
       showToast('✅ Ubicación GPS obtenida', 'success');
+      if (onSuccess) onSuccess();
     },
     () => showToast('No se pudo obtener el GPS', 'error'),
     { enableHighAccuracy: true, timeout: 10000 }
   );
+}
+
+// ─── RESIZE DE FOTO ────────────────────────────────
+// Comprime fotos grandes antes de enviarlas (evita payloads de 10MB+)
+function resizeFoto(base64, maxWidth = 1200) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      if (img.width <= maxWidth) { resolve(base64); return; }
+      const canvas = document.createElement('canvas');
+      const ratio = maxWidth / img.width;
+      canvas.width = maxWidth;
+      canvas.height = Math.round(img.height * ratio);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL('image/jpeg', 0.82));
+    };
+    img.onerror = () => resolve(base64);
+    img.src = base64;
+  });
 }
 
 // ─── FORMULARIO ────────────────────────────────────
@@ -792,12 +855,12 @@ function validarFormulario() {
   document.getElementById('btn-enviar').disabled = !(lat !== null && gravedadSeleccionada !== null);
 }
 
-document.getElementById('input-foto').addEventListener('change', function(e) {
+document.getElementById('input-foto').addEventListener('change', async function(e) {
   const file = e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = (ev) => {
-    fotoBase64 = ev.target.result;
+  reader.onload = async (ev) => {
+    fotoBase64 = await resizeFoto(ev.target.result);
     const p = document.getElementById('foto-preview');
     p.src = fotoBase64; p.style.display = 'block';
     document.querySelector('.foto-area p').textContent = '✅ Foto lista';
@@ -827,43 +890,43 @@ document.getElementById('btn-enviar').addEventListener('click', async () => {
     lat, lng,
     fecha: new Date().toLocaleString('es-VE', { timeZone: 'America/Caracas' }),
     foto: fotoBase64 || '',
-    estado: 'activo'  // activo | pendiente | arreglado
+    estado: 'activo'
   };
+
+  const backendActivo = BACKEND_URL && !BACKEND_URL.includes('TU-API');
+
+  if (backendActivo) {
+    try {
+      const res = await fetch(`${BACKEND_URL}/reportes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(reporte)
+      });
+      const result = await res.json();
+
+      if (result.bloqueado) {
+        showToast(`🚫 Rechazado: ${result.razon || 'contenido inapropiado'}`, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Enviar reporte';
+        return;
+      }
+
+      // Usar la URL de Storage en lugar del base64
+      if (result.foto) reporte.foto = result.foto;
+      // Actualizar id al asignado por el backend (para que el PATCH funcione)
+      if (result.reporte?.id) reporte.id = result.reporte.id;
+
+    } catch {
+      showToast('⚠️ Sin conexión — guardado localmente', 'error');
+    }
+  }
 
   reportes.push(reporte);
   guardarLocal();
   const idx = reportes.length - 1;
   agregarPinMapa(reporte, idx);
   actualizarContador();
-
-  if (APPS_SCRIPT_URL !== 'TU_URL_DE_APPS_SCRIPT_AQUI') {
-    try {
-      const result = await enviarConJsonp(reporte);
-      if (result && result.bloqueado) {
-        reportes.pop();
-        if (marcadores[marcadores.length-1]) {
-          mapa.removeLayer(marcadores[marcadores.length-1]);
-          marcadores.pop();
-        }
-        guardarLocal();
-        actualizarContador();
-        showToast('🚫 Reporte rechazado: contenido inapropiado', 'error');
-      } else if (result && result.ok) {
-        // Reemplazar foto base64 por URL de Drive para no saturar localStorage
-        if (result.foto) {
-          reportes[reportes.length-1].foto = result.foto;
-          guardarLocal();
-          refreshPopup(reportes.length-1);
-        }
-        showToast('✅ Reporte enviado y aprobado', 'success');
-      } else {
-        showToast('✅ Reporte registrado', 'success');
-      }
-    } catch { showToast('⚠️ Sin conexión — guardado localmente', 'error'); }
-  } else {
-    showToast('✅ Reporte registrado en el mapa', 'success');
-  }
-
+  showToast(backendActivo ? '✅ Reporte publicado' : '✅ Reporte registrado (offline)', 'success');
   btn.textContent = 'Enviar reporte';
   cerrarFormulario();
 });
@@ -877,11 +940,18 @@ function agregarPinMapa(r, idx) {
 
 // ─── STORAGE ───────────────────────────────────────
 function guardarLocal() {
-  try { localStorage.setItem('huecos_cabudare', JSON.stringify(reportes)); } catch {}
+  try {
+    // No guardar base64 en localStorage — solo URLs de Storage
+    const toSave = reportes.map(r => ({
+      ...r,
+      foto: r.foto?.startsWith('data:') ? '' : (r.foto || '')
+    }));
+    localStorage.setItem('huecos_cabudare', JSON.stringify(toSave));
+  } catch {}
 }
 
 async function cargarReportesGuardados() {
-  // Carga local inmediata
+  // Carga local inmediata para no mostrar mapa vacío
   try {
     const local = JSON.parse(localStorage.getItem('huecos_cabudare') || '[]');
     reportes = local;
@@ -892,33 +962,23 @@ async function cargarReportesGuardados() {
     actualizarContador();
   } catch {}
 
-  // Sincroniza desde Google Sheets
-  if (APPS_SCRIPT_URL && !APPS_SCRIPT_URL.includes('TU_URL')) {
+  // Sincroniza desde el backend (reemplaza los datos locales con la verdad de la DB)
+  if (BACKEND_URL && !BACKEND_URL.includes('TU-API')) {
     try {
-      const res = await fetch(APPS_SCRIPT_URL);
+      const res = await fetch(`${BACKEND_URL}/reportes`);
       const json = await res.json();
-      if (json.ok && json.reportes && json.reportes.length > 0) {
+      if (json.ok && json.reportes?.length > 0) {
         marcadores.forEach(m => m && mapa.removeLayer(m));
         marcadores = [];
-        reportes = json.reportes.map(r => ({
-          id: r.id,
-          nombre: r.nombre,
-          gravedad: r.gravedad,
-          descripcion: r['descripción'] || r.descripcion,
-          lat: parseFloat(r.lat),
-          lng: parseFloat(r.lng),
-          fecha: r.fecha,
-          foto: r.foto || '',
-          estado: r.estado || 'activo'
-        })).filter(r => !isNaN(r.lat) && !isNaN(r.lng));
+        reportes = json.reportes
+          .map(r => ({ ...r, lat: parseFloat(r.lat), lng: parseFloat(r.lng), estado: r.estado || 'activo' }))
+          .filter(r => !isNaN(r.lat) && !isNaN(r.lng));
         reportes.forEach((r, i) => agregarPinMapa(r, i));
         guardarLocal();
         actualizarContador();
         showToast('📡 Mapa sincronizado', 'success');
       }
-    } catch {
-      // Sin internet, usa los datos locales
-    }
+    } catch {} // Sin internet — ya están los datos locales
   }
 }
 
@@ -962,7 +1022,6 @@ function irAReporte(idx) {
   setTimeout(() => marcadores[idx] && marcadores[idx].openPopup(), 400);
 }
 
-// Filtros lista
 document.querySelectorAll('.filtro-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.filtro-btn').forEach(b => b.classList.remove('active'));
@@ -983,11 +1042,9 @@ function actualizarContador() {
 // ─── ADMIN ─────────────────────────────────────────
 function abrirAdmin() {
   if (esAdmin) {
-    // Si ya es admin, cerrar sesión
     esAdmin = false;
     document.getElementById('admin-badge').classList.remove('visible');
     showToast('Sesión admin cerrada', 'info');
-    // Refrescar todos los popups
     reportes.forEach((r, i) => refreshPopup(i));
     return;
   }
@@ -1024,79 +1081,41 @@ function showToast(msg, tipo) {
   setTimeout(() => t.classList.remove('show'), 3000);
 }
 
-// ─── JSONP HELPER ──────────────────────────────────
-// Envía el reporte por POST (sin límite de tamaño de URL).
-// Como 'no-cors' no permite leer la respuesta directamente, esperamos
-// unos segundos y consultamos la lista para verificar el resultado.
-async function enviarConJsonp(datos) {
-  await fetch(APPS_SCRIPT_URL, {
-    method: 'POST',
-    mode: 'no-cors',
-    headers: { 'Content-Type': 'text/plain' },
-    body: JSON.stringify(datos)
-  });
-
-  // Esperar a que el servidor procese (moderación + posible subida a Drive)
-  await new Promise(r => setTimeout(r, 4000));
-
-  // Verificar si el reporte fue aprobado consultando la lista
-  try {
-    const res = await fetchJsonp(APPS_SCRIPT_URL);
-    if (res && res.ok && res.reportes) {
-      const encontrado = res.reportes.find(r => String(r.id) === String(datos.id));
-      if (encontrado) {
-        return { ok: true, foto: encontrado.foto || '' };
-      } else {
-        return { ok: false, bloqueado: true, razon: 'contenido_rechazado' };
-      }
-    }
-  } catch {}
-
-  // Si no pudimos verificar, asumimos que se guardó
-  return { ok: true, foto: '' };
-}
-
-// Helper JSONP solo para consultas GET (sin data, listas cortas, sin problema de tamaño)
-function fetchJsonp(baseUrl) {
-  return new Promise((resolve, reject) => {
-    const cbName = 'cb_' + Date.now() + '_' + Math.floor(Math.random()*10000);
-    let resuelto = false;
-    const timeout = setTimeout(() => {
-      if (resuelto) return;
-      resuelto = true;
-      delete window[cbName];
-      reject(new Error('timeout'));
-    }, 15000);
-    window[cbName] = function(result) {
-      if (resuelto) return;
-      resuelto = true;
-      clearTimeout(timeout);
-      delete window[cbName];
-      const script = document.getElementById(cbName + '_script');
-      if (script) script.remove();
-      resolve(result);
-    };
-    const script = document.createElement('script');
-    script.id = cbName + '_script';
-    script.src = baseUrl + '?callback=' + cbName;
-    script.onerror = () => {
-      setTimeout(() => {
-        if (resuelto) return;
-        resuelto = true;
-        clearTimeout(timeout);
-        delete window[cbName];
-        reject(new Error('script error'));
-      }, 1500);
-    };
-    document.body.appendChild(script);
-  });
-}
-
 // ─── EVENTOS ───────────────────────────────────────
-document.getElementById('btn-reportar-principal').addEventListener('click', activarModoClic);
-document.getElementById('btn-gps').addEventListener('click', () => {
-  usarGPS();
-  setTimeout(() => { if (lat !== null) abrirFormulario(); }, 2500);
+
+// Botón principal: intenta GPS primero; si falla, cae al modo de toque en mapa
+document.getElementById('btn-reportar-principal').addEventListener('click', () => {
+  const btn = document.getElementById('btn-reportar-principal');
+  if (!navigator.geolocation) { activarModoClic(); return; }
+  btn.textContent = '📍 Obteniendo ubicación...';
+  btn.disabled = true;
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      setUbicacion(pos.coords.latitude, pos.coords.longitude);
+      btn.textContent = '⚠️ Reportar un hueco';
+      btn.disabled = false;
+      abrirFormulario();
+    },
+    () => {
+      btn.textContent = '⚠️ Reportar un hueco';
+      btn.disabled = false;
+      showToast('GPS no disponible — toca el mapa', 'info');
+      activarModoClic();
+    },
+    { enableHighAccuracy: true, timeout: 8000 }
+  );
+});
+
+// FAB de GPS: re-obtiene la ubicación (útil si el GPS del botón principal falló)
+document.getElementById('btn-gps').addEventListener('click', () => usarGPS(() => {
+  if (!document.getElementById('modal-overlay').classList.contains('active')) abrirFormulario();
+}));
+
+// Corregir ubicación tocando el mapa sin perder los datos del formulario
+document.getElementById('btn-cambiar-ubicacion').addEventListener('click', () => {
+  modoCambioUbicacion = true;
+  document.getElementById('modal-overlay').classList.remove('active');
+  activarModoClic();
 });
 document.getElementById('btn-lista').addEventListener('click', abrirLista);
 document.getElementById('btn-cancelar').addEventListener('click', () => { desactivarModoClic(); cerrarFormulario(); });
@@ -1113,8 +1132,7 @@ document.getElementById('lista-overlay').addEventListener('click', (e) => {
 
 // ─── BIENVENIDA ────────────────────────────────────
 function checkBienvenida() {
-  const visto = localStorage.getItem('huecos_bienvenida');
-  if (!visto) {
+  if (!localStorage.getItem('huecos_bienvenida')) {
     document.getElementById('bienvenida-overlay').style.display = 'flex';
   }
 }
