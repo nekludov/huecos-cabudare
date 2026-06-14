@@ -804,7 +804,7 @@ function usarGPS(onSuccess) {
       showToast('✅ Ubicación GPS obtenida', 'success');
       if (onSuccess) onSuccess();
     },
-    () => showToast('No se pudo obtener el GPS', 'error'),
+    (err) => showToast(err.code === 1 ? 'Permiso de ubicación denegado — revisa los ajustes del navegador' : 'No se pudo obtener el GPS — toca el mapa', 'error'),
     { enableHighAccuracy: true, timeout: 10000 }
   );
 }
@@ -1096,13 +1096,17 @@ document.getElementById('btn-reportar-principal').addEventListener('click', () =
       btn.disabled = false;
       abrirFormulario();
     },
-    () => {
+    (err) => {
       btn.textContent = '⚠️ Reportar un hueco';
       btn.disabled = false;
-      showToast('GPS no disponible — toca el mapa', 'info');
-      activarModoClic();
+      if (err.code === 1) {
+        showToast('Permiso de ubicación denegado — revisa los ajustes del navegador', 'error');
+      } else {
+        showToast('GPS no disponible — toca el mapa', 'info');
+        activarModoClic();
+      }
     },
-    { enableHighAccuracy: true, timeout: 8000 }
+    { enableHighAccuracy: true, timeout: 12000 }
   );
 });
 
