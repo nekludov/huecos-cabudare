@@ -106,6 +106,39 @@ app.patch('/reportes/:id/estado', async (req, res) => {
   }
 });
 
+// ─── POST /reportes/:id/voto ───────────────────────
+// Ciudadano confirma que el hueco fue tapado (se necesitan 3 votos para pasar a "pendiente")
+app.post('/reportes/:id/voto', async (req, res) => {
+  try {
+    const { data: actual, error: errGet } = await supabase
+      .from('reportes')
+      .select('estado, votos_arreglo')
+      .eq('id', req.params.id)
+      .single();
+
+    if (errGet) throw errGet;
+    if (actual.estado !== 'activo') {
+      return res.json({ ok: false, error: 'El reporte ya no está activo' });
+    }
+
+    const votos = (actual.votos_arreglo || 0) + 1;
+    const estado = votos >= 3 ? 'pendiente' : 'activo';
+
+    const { data, error } = await supabase
+      .from('reportes')
+      .update({ votos_arreglo: votos, estado })
+      .eq('id', req.params.id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ ok: true, votos, estado });
+  } catch (err) {
+    console.error('POST /voto:', err.message);
+    res.status(500).json({ ok: false });
+  }
+});
+
 // ─── GET /health ───────────────────────────────────
 app.get('/health', (req, res) => res.json({ ok: true, ts: Date.now() }));
 

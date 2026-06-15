@@ -336,6 +336,16 @@
   .btn-admin-confirmar { background: var(--verde); color: #fff; }
   .btn-admin-rechazar { background: #2C2C2E; color: var(--rojo); border: 1.5px solid var(--rojo); margin-top: 6px; }
 
+  .btns-share { display: flex; gap: 6px; margin-top: 10px; }
+  .btn-share {
+    flex: 1; padding: 7px 4px; border-radius: 8px; border: none;
+    font-size: 11px; font-weight: 700; cursor: pointer; text-align: center;
+    text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 3px;
+  }
+  .btn-share-wa  { background: #25D366; color: #fff; }
+  .btn-share-x   { background: #000; color: #fff; }
+  .btn-share-ig  { background: linear-gradient(135deg,#f09433,#e6683c,#dc2743,#cc2366,#bc1888); color: #fff; }
+
   /* PANEL ADMIN */
   .admin-overlay {
     position: fixed; inset: 0; background: rgba(0,0,0,0.85);
@@ -661,34 +671,31 @@ function buildPopup(r, idx) {
     ? `<img src="${r.foto}" style="width:100%;border-radius:8px;margin-top:8px;max-height:120px;object-fit:cover;"/>`
     : '';
 
+  const votados = JSON.parse(localStorage.getItem('huecos_votados') || '[]');
+  const yaVote = votados.includes(String(r.id));
+  const votos = r.votos_arreglo || 0;
+
   let acciones = '';
   if (r.estado === 'activo') {
-    acciones = `<button class="btn-popup btn-ya-taparon" onclick="ciudadanoReportaArreglo(${idx})">🔵 Ya lo taparon</button>`;
+    acciones = `<button class="btn-popup btn-ya-taparon" onclick="ciudadanoReportaArreglo(${idx})" ${yaVote ? 'disabled' : ''}>🔵 Ya lo taparon${votos > 0 ? ' (' + votos + '/3)' : ''}</button>`;
   }
   if (esAdmin && r.estado === 'pendiente') {
-    acciones = `
-      <button class="btn-popup btn-admin-confirmar" onclick="adminConfirmaArreglo(${idx})">✅ Confirmar arreglo</button>
-      <button class="btn-popup btn-admin-rechazar" onclick="adminRechazaArreglo(${idx})">↩️ Rechazar (sigue activo)</button>
-    `;
+    acciones = `<button class="btn-popup btn-admin-confirmar" onclick="adminConfirmaArreglo(${idx})">✅ Confirmar arreglo</button><button class="btn-popup btn-admin-rechazar" onclick="adminRechazaArreglo(${idx})">↩️ Rechazar (sigue activo)</button>`;
   }
   if (esAdmin && r.estado === 'activo') {
-    acciones = `
-      <button class="btn-popup btn-ya-taparon" onclick="ciudadanoReportaArreglo(${idx})">🔵 Ya lo taparon</button>
-      <button class="btn-popup btn-admin-confirmar" style="margin-top:6px;" onclick="adminConfirmaArreglo(${idx})">✅ Marcar como arreglado (admin)</button>
-    `;
+    acciones = `<button class="btn-popup btn-ya-taparon" onclick="ciudadanoReportaArreglo(${idx})" ${yaVote ? 'disabled' : ''}>🔵 Ya lo taparon${votos > 0 ? ' (' + votos + '/3)' : ''}</button><button class="btn-popup btn-admin-confirmar" style="margin-top:6px;" onclick="adminConfirmaArreglo(${idx})">✅ Marcar como arreglado (admin)</button>`;
   }
 
-  return `
-    <div class="popup-content">
-      <h3>⚠️ Hueco #${idx+1}</h3>
-      <p><strong>Por:</strong> ${r.nombre}</p>
-      ${r.descripcion ? `<p>${r.descripcion}</p>` : ''}
-      <p><small>${r.fecha}</small></p>
-      ${fotoHtml}
-      <div class="popup-tags">${estadoTag}</div>
-      ${acciones}
-    </div>
-  `;
+  const desc = (r.descripcion || 'Hueco en vía pública').slice(0, 100);
+  const siteUrl = 'https://huecoscabudare.xyz';
+  const gEmoji = {pequeño:'🟡',mediano:'🟠',grande:'🔴'}[r.gravedad] || '⚠️';
+  const msgWa = encodeURIComponent(gEmoji + ' *Hueco en Cabudare*\n' + desc + '\n📍 ' + siteUrl);
+  const msgX  = encodeURIComponent('🚨 Hueco en #Cabudare #Lara\n' + desc + '\n📍 ' + siteUrl + '\n@notipromar @notiguaro1 @NoticiasBqto @laprensalara');
+  const shareHtml = r.estado !== 'arreglado'
+    ? '<div class="btns-share"><a href="https://wa.me/?text=' + msgWa + '" target="_blank" class="btn-share btn-share-wa">📲 WA</a><a href="https://twitter.com/intent/tweet?text=' + msgX + '" target="_blank" class="btn-share btn-share-x">✖ X</a><button class="btn-share btn-share-ig" onclick="copiarInsta(' + idx + ')">📷 IG</button></div>'
+    : '';
+
+  return '<div class="popup-content"><h3>⚠️ Hueco #' + (idx+1) + '</h3><p><strong>Por:</strong> ' + r.nombre + '</p>' + (r.descripcion ? '<p>' + r.descripcion + '</p>' : '') + '<p><small>' + r.fecha + '</small></p>' + fotoHtml + '<div class="popup-tags">' + estadoTag + '</div>' + acciones + shareHtml + '</div>';
 }
 
 function refreshPopup(idx) {
@@ -701,18 +708,40 @@ function refreshPopup(idx) {
 // ─── ACCIONES ESTADO ────────────────────────────────
 window.ciudadanoReportaArreglo = async function(idx) {
   const id = reportes[idx].id;
-  reportes[idx].estado = 'pendiente';
-  guardarLocal();
-  refreshPopup(idx);
-  actualizarContador();
-  showToast('🔵 Reportando — el admin verificará', 'info');
+  const votados = JSON.parse(localStorage.getItem('huecos_votados') || '[]');
+  if (votados.includes(String(id))) { showToast('Ya confirmaste este arreglo', 'info'); return; }
+
   try {
-    await fetch(`${BACKEND_URL}/reportes/${id}/estado`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ estado: 'pendiente' })
-    });
-  } catch {}
+    const res = await fetch(`${BACKEND_URL}/reportes/${id}/voto`, { method: 'POST' });
+    const result = await res.json();
+    if (!result.ok) { showToast(result.error || 'No se pudo registrar', 'error'); return; }
+
+    votados.push(String(id));
+    localStorage.setItem('huecos_votados', JSON.stringify(votados));
+
+    reportes[idx].votos_arreglo = result.votos;
+    reportes[idx].estado = result.estado;
+    guardarLocal();
+    refreshPopup(idx);
+    actualizarContador();
+
+    if (result.estado === 'pendiente') {
+      showToast('🔵 ¡3 confirmaciones! Pasó a verificación del admin', 'success');
+    } else {
+      showToast('🔵 Confirmado (' + result.votos + '/3) — faltan ' + (3 - result.votos) + ' más', 'info');
+    }
+  } catch {
+    showToast('⚠️ Sin conexión', 'error');
+  }
+};
+
+window.copiarInsta = function(idx) {
+  const r = reportes[idx];
+  const desc = r.descripcion || 'Hueco en vía pública';
+  const texto = '🚨 HUECO EN CABUDARE 🛣️\n' + desc + '\n📍 huecoscabudare.xyz\n.\n@derbyalcalde @alcaldiadepalavecino\n#HuecosCabudare #Cabudare #Palavecino #Lara';
+  navigator.clipboard.writeText(texto)
+    .then(() => showToast('✅ Copiado — abre Instagram y pégalo', 'success'))
+    .catch(() => showToast('No se pudo copiar automáticamente', 'error'));
 };
 
 window.adminConfirmaArreglo = async function(idx) {
